@@ -1,31 +1,33 @@
 #!/bin/bash
 set -euo pipefail
 
-# Generate random password for OpenVSCode Server authentication
+# Auto-generate secrets/configs
 OVSC_PASS=$(openssl rand -base64 18)
 OVSC_PORT=8080
 
-# Save password for posterity
-echo "OPENVSCODE_SERVER_PASSWORD=$OVSC_PASS" > ./openvscode_env.txt
-echo "OPENVSCODE_SERVER_PORT=$OVSC_PORT" >> ./openvscode_env.txt
+# Save password in .env for user reference
+cat <<EOF > .env
+OPENVSCODE_SERVER_PASSWORD=$OVSC_PASS
+OPENVSCODE_SERVER_PORT=$OVSC_PORT
+EOF
 
 # Update and install dependencies
 sudo apt-get update
 sudo apt-get install -y wget curl unzip tar git \
-    openjdk-17-jdk \
-    ffmpeg \
-    usbutils \
-    build-essential \
-    pkg-config \
-    meson \
-    ninja-build \
-    libavcodec-dev \
-    libavdevice-dev \
-    libavformat-dev \
-    libavutil-dev \
-    libusb-1.0-0-dev \
-    libssl-dev \
-    libwebsockets-dev
+  openjdk-17-jdk \
+  ffmpeg \
+  usbutils \
+  build-essential \
+  pkg-config \
+  meson \
+  ninja-build \
+  libavcodec-dev \
+  libavdevice-dev \
+  libavformat-dev \
+  libavutil-dev \
+  libusb-1.0-0-dev \
+  libssl-dev \
+  libwebsockets-dev
 
 # Install OpenVSCode Server
 cd /opt
@@ -52,7 +54,7 @@ sudo $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager "platform-tools" "pla
 echo 'export ANDROID_SDK_ROOT=/opt/android-sdk' | sudo tee /etc/profile.d/android_sdk.sh
 echo 'export PATH=$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH' | sudo tee -a /etc/profile.d/android_sdk.sh
 
-# Install scrcpy (latest)
+# Install scrcpy
 cd /tmp
 sudo git clone https://github.com/Genymobile/scrcpy.git
 cd scrcpy
@@ -60,7 +62,7 @@ sudo meson setup x --buildtype release --strip -Db_lto=true
 sudo ninja -Cx
 sudo ninja -Cx install
 
-# Create script for always-on Android streaming service
+# Create script to keep scrcpy running for browser streaming
 sudo tee /usr/local/bin/android_stream_service.sh > /dev/null <<'EOF'
 #!/bin/bash
 export ANDROID_SDK_ROOT=/opt/android-sdk
@@ -125,5 +127,5 @@ echo "OpenVSCode Server is running!"
 echo "URL: http://$IP:$OVSC_PORT"
 echo "Username: $USER"
 echo "Password: $OVSC_PASS"
-echo "You can also find these credentials in ./openvscode_env.txt"
+echo "You can also find these credentials in .env"
 echo "========================================"
