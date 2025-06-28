@@ -1,28 +1,30 @@
-# Android Dev & OpenVSCode Server One-Click Setup
+# MTVT VM Config
 
-## Usage (one command)
+Quickly set up an Android development environment, OpenVSCode Server, and always-on Android streaming service on Ubuntu.
+
+## One-Command Install
 
 ```sh
-bash <(curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/setup.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/KdogDevs/mtvt-vm-config/main/setup.sh)
 ```
 
 - Installs OpenVSCode Server v1.101.2
-- Installs Android SDK/NDK, scrcpy, and dependencies
-- Sets up always-on Android streaming service
-- Auto-generates connection password and prints it at the end
+- Installs Android SDK, platform tools, and scrcpy
+- Sets up services for browser coding and Android streaming
+- Auto-generates password and prints it at the end
 
-## After install
+## Output
 
-- Access your OpenVSCode Server in the browser (see printed credentials)
-- Android streaming service will auto-start with your device attached
+- OpenVSCode Server URL, username, and password (also saved in `.env`)
+- Android stream auto-starts when a device is connected
 
 ## Security
 
-- Credentials are auto-generated and saved to `openvscode_env.txt`
-- You may want to set up a firewall or HTTPS for public deployments
+- Password is randomly generated and only printed (and saved to `.env`)
+- For public deployments, set up a firewall or HTTPS proxy
 
 ## Troubleshooting
 
-- If you encounter errors, check systemd logs:
-  - `sudo systemctl status openvscode-server`
-  - `sudo systemctl status android-stream.service`
+Check service logs:
+- `sudo systemctl status openvscode-server`
+- `sudo systemctl status android-stream.service`
