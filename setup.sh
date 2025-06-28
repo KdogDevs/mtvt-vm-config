@@ -5,10 +5,10 @@ set -euo pipefail
 OVSC_PASS=$(openssl rand -base64 18)
 OVSC_PORT=8080
 
-# Save password in .env for user reference
 cat <<EOF > .env
 OPENVSCODE_SERVER_PASSWORD=$OVSC_PASS
 OPENVSCODE_SERVER_PORT=$OVSC_PORT
+SCRCPY_WEB_PORT=5000
 EOF
 
 # Update and install dependencies
@@ -27,7 +27,13 @@ sudo apt-get install -y wget curl unzip tar git \
   libavutil-dev \
   libusb-1.0-0-dev \
   libssl-dev \
-  libwebsockets-dev
+  libwebsockets-dev \
+  python3 \
+  python3-pip
+
+# Node.js (scrcpy-web needs Node 18+)
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt-get install -y nodejs
 
 # Install OpenVSCode Server
 cd /opt
@@ -54,7 +60,7 @@ sudo $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager "platform-tools" "pla
 echo 'export ANDROID_SDK_ROOT=/opt/android-sdk' | sudo tee /etc/profile.d/android_sdk.sh
 echo 'export PATH=$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH' | sudo tee -a /etc/profile.d/android_sdk.sh
 
-# Install scrcpy
+# Install scrcpy (native, needed for backend)
 cd /tmp
 sudo git clone https://github.com/Genymobile/scrcpy.git
 cd scrcpy
@@ -62,26 +68,34 @@ sudo meson setup x --buildtype release --strip -Db_lto=true
 sudo ninja -Cx
 sudo ninja -Cx install
 
-# Create script to keep scrcpy running for browser streaming
-sudo tee /usr/local/bin/android_stream_service.sh > /dev/null <<'EOF'
-#!/bin/bash
-export ANDROID_SDK_ROOT=/opt/android-sdk
-export PATH=$ANDROID_SDK_ROOT/platform-tools:$PATH
+# Install scrcpy-web
+cd /opt
+sudo git clone https://github.com/NetrisTV/scrcpy-web.git
+sudo chown -R $USER:$USER scrcpy-web
+cd scrcpy-web
+npm install
 
-adb start-server
+# Create a systemd service for scrcpy-web
+sudo tee /etc/systemd/system/scrcpy-web.service > /dev/null <<EOF
+[Unit]
+Description=scrcpy-web server
+After=network.target
 
-while true; do
-    if adb devices | grep -w "device" | grep -v "List"; then
-        scrcpy --tcpip=localhost --no-display --no-control &
-        sleep 60
-    else
-        sleep 5
-    fi
-done
+[Service]
+Type=simple
+User=$USER
+WorkingDirectory=/opt/scrcpy-web
+Environment=PORT=5000
+Environment=ANDROID_SDK_ROOT=/opt/android-sdk
+Environment=PATH=/opt/android-sdk/platform-tools:/opt/android-sdk/cmdline-tools/latest/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/bin/npm run start
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
 EOF
-sudo chmod +x /usr/local/bin/android_stream_service.sh
 
-# Create OpenVSCode Server systemd service
+# OpenVSCode Server systemd service
 sudo tee /etc/systemd/system/openvscode-server.service > /dev/null <<EOF
 [Unit]
 Description=OpenVSCode Server
@@ -99,26 +113,10 @@ Restart=always
 WantedBy=multi-user.target
 EOF
 
-# Create Android stream systemd service
-sudo tee /etc/systemd/system/android-stream.service > /dev/null <<EOF
-[Unit]
-Description=Android Stream (scrcpy) Service
-After=network.target
-
-[Service]
-Type=simple
-User=$USER
-ExecStart=/usr/local/bin/android_stream_service.sh
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
 # Enable and start services
 sudo systemctl daemon-reload
 sudo systemctl enable --now openvscode-server
-sudo systemctl enable --now android-stream.service
+sudo systemctl enable --now scrcpy-web
 
 # Print connection info
 IP=$(hostname -I | awk '{print $1}')
@@ -127,5 +125,8 @@ echo "OpenVSCode Server is running!"
 echo "URL: http://$IP:$OVSC_PORT"
 echo "Username: $USER"
 echo "Password: $OVSC_PASS"
+echo
+echo "scrcpy-web is running for browser-based Android device streaming!"
+echo "URL: http://$IP:5000"
 echo "You can also find these credentials in .env"
 echo "========================================"
