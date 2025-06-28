@@ -72,19 +72,17 @@ echo "[4/8] Installing Android SDK..."
 sudo mkdir -p "$ANDROID_SDK_ROOT"
 cd "$ANDROID_SDK_ROOT"
 sudo wget -O commandlinetools.zip "https://dl.google.com/android/repository/commandlinetools-linux-10406996_latest.zip"
-# Unzip to a temporary directory to handle the nested folder structure correctly
 sudo unzip -o commandlinetools.zip -d "$ANDROID_SDK_ROOT/cmdline-tools-temp"
 sudo rm commandlinetools.zip
 sudo mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
-# Move the actual tools to a 'latest' directory as recommended by Google
 sudo mv "$ANDROID_SDK_ROOT/cmdline-tools-temp/cmdline-tools" "$ANDROID_SDK_ROOT/cmdline-tools/latest"
 sudo rm -rf "$ANDROID_SDK_ROOT/cmdline-tools-temp"
 
-# Set environment for the rest of the script and for system-wide access
-export ANDROID_HOME=$ANDROID_SDK_ROOT
-export PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools"
+# Set environment for system-wide access
 echo "export ANDROID_HOME=$ANDROID_SDK_ROOT" | sudo tee /etc/profile.d/android_sdk.sh
 echo 'export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools' | sudo tee -a /etc/profile.d/android_sdk.sh
+# Source the new profile script to make variables available now
+source /etc/profile.d/android_sdk.sh
 
 # Check for sdkmanager before proceeding
 if [ ! -f "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
@@ -92,11 +90,13 @@ if [ ! -f "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
     exit 1
 fi
 
-# Accept licenses and install platform-tools automatically
+# **FIX:** Define the environment explicitly for the sudo command
+SDKMANAGER_CMD="env PATH=$PATH $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+
 echo "Accepting Android SDK licenses..."
-yes | sudo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+yes | sudo $SDKMANAGER_CMD --licenses > /dev/null
 echo "Installing Android platform-tools, platforms, and build-tools..."
-sudo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-34" "build-tools;34.0.0" > /dev/null
+sudo $SDKMANAGER_CMD "platform-tools" "platforms;android-34" "build-tools;34.0.0" > /dev/null
 
 # --- 5. Install scrcpy (from source) ---
 echo "[5/8] Installing scrcpy (native backend)..."
@@ -129,7 +129,7 @@ After=network-online.target
 Type=simple
 User=$CUSER
 WorkingDirectory=/opt/openvscode-server
-Environment=PASSWORD=$OVSC_PASS
+Environment="PASSWORD=$OVSC_PASS"
 ExecStart=/opt/openvscode-server/bin/openvscode-server --host 0.0.0.0 --port $OVSC_PORT --without-connection-token --auth password
 Restart=always
 RestartSec=10
@@ -149,8 +149,8 @@ After=network-online.target
 Type=simple
 User=$CUSER
 WorkingDirectory=/opt/scrcpy-web
-Environment=PORT=$SCRCPY_WEB_PORT
-Environment=PATH=/usr/bin:/usr/local/bin:$ANDROID_HOME/platform-tools
+Environment="PORT=$SCRCPY_WEB_PORT"
+Environment="PATH=/usr/bin:/usr/local/bin:$ANDROID_SDK_ROOT/platform-tools"
 ExecStart=/usr/bin/npm run start
 Restart=always
 RestartSec=10
