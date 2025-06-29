@@ -1,7 +1,7 @@
 #!/bin/bash
 #
-# MTVT VM Config - One-Command Setup Script (v7 - Better error handling)
-# Installs: OpenVSCode Server, Android SDK, scrcpy, and scrcpy-web
+# MTVT VM Config - One-Command Setup Script (v8 - Skip native scrcpy build)
+# Installs: OpenVSCode Server, Android SDK, and scrcpy-web
 # Author: KdogDevs & Copilot
 # Date: 2025-06-29
 #
@@ -17,7 +17,7 @@ CUSER=$(whoami)
 echo "--- Starting MTVT VM Setup for user: $CUSER ---"
 
 # --- 1. Cleanup: Ensure a clean slate ---
-echo "[1/8] Cleaning up previous installations..."
+echo "[1/7] Cleaning up previous installations..."
 sudo systemctl stop openvscode-server.service 2>/dev/null || true
 sudo systemctl stop scrcpy-web.service 2>/dev/null || true
 sudo rm -f /etc/systemd/system/openvscode-server.service
@@ -26,9 +26,9 @@ sudo systemctl daemon-reload
 sudo rm -rf /opt/openvscode-server /opt/scrcpy /opt/scrcpy-web "$ANDROID_SDK_ROOT"
 
 # --- 2. Install System Dependencies ---
-echo "[2/8] Installing system dependencies..."
+echo "[2/7] Installing system dependencies..."
 sudo apt-get update
-sudo apt-get install -y wget curl unzip tar git openjdk-17-jdk ffmpeg usbutils build-essential pkg-config meson ninja-build libavcodec-dev libavdevice-dev libavformat-dev libavutil-dev libusb-1.0-0-dev libssl-dev libwebsockets-dev python3 cmake libsdl2-dev
+sudo apt-get install -y wget curl unzip tar git openjdk-17-jdk adb
 
 # Install Node.js
 if ! command -v node > /dev/null; then
@@ -38,7 +38,7 @@ if ! command -v node > /dev/null; then
 fi
 
 # --- 3. Install OpenVSCode Server ---
-echo "[3/8] Installing OpenVSCode Server..."
+echo "[3/7] Installing OpenVSCode Server..."
 cd /opt
 sudo wget -q --show-progress -O openvscode-server.tar.gz "https://github.com/gitpod-io/openvscode-server/releases/download/openvscode-server-v1.101.2/openvscode-server-v1.101.2-linux-x64.tar.gz"
 sudo tar -xzf openvscode-server.tar.gz
@@ -47,7 +47,7 @@ sudo mv openvscode-server-v1.101.2-linux-x64 openvscode-server
 sudo chown -R $CUSER:$CUSER openvscode-server
 
 # --- 4. Install Android SDK ---
-echo "[4/8] Installing Android SDK..."
+echo "[4/7] Installing Android SDK..."
 sudo mkdir -p "$ANDROID_SDK_ROOT"
 cd "$ANDROID_SDK_ROOT"
 sudo wget -q --show-progress -O commandlinetools.zip "https://dl.google.com/android/repository/commandlinetools-linux-10406996_latest.zip"
@@ -90,42 +90,18 @@ sudo env JAVA_HOME="$JAVA_HOME_PATH" \
      "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
      "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-# --- 5. Install scrcpy ---
-echo "[5/8] Installing scrcpy (native backend)..."
+# --- 5. Install scrcpy-web (skip native scrcpy build) ---
+echo "[5/7] Installing scrcpy-web..."
 cd /opt
-
-# Download pre-built scrcpy server
-echo "Downloading scrcpy server..."
-SCRCPY_VERSION="v2.4"
-sudo wget -q --show-progress -O scrcpy-server.jar "https://github.com/Genymobile/scrcpy/releases/download/${SCRCPY_VERSION}/scrcpy-server-${SCRCPY_VERSION}"
-sudo mkdir -p /usr/local/share/scrcpy
-sudo mv scrcpy-server.jar /usr/local/share/scrcpy/scrcpy-server
-
-# Build scrcpy from source
-echo "Building scrcpy from source..."
-sudo git clone -q https://github.com/Genymobile/scrcpy.git
-cd scrcpy
-git checkout ${SCRCPY_VERSION}
-
-# Show build output for debugging
-echo "Running meson setup..."
-sudo meson setup x --buildtype release --strip -Db_lto=true -Dprebuilt_server=/usr/local/share/scrcpy/scrcpy-server
-echo "Building with ninja..."
-sudo ninja -Cx
-echo "Installing scrcpy..."
-sudo ninja -Cx install
-
-# --- 6. Install scrcpy-web ---
-echo "[6/8] Installing scrcpy-web..."
-cd /opt
+echo "Cloning scrcpy-web repository..."
 sudo git clone -q https://github.com/NetrisTV/scrcpy-web.git
 sudo chown -R $CUSER:$CUSER scrcpy-web
 cd scrcpy-web
 echo "Installing npm dependencies (this may take a few minutes)..."
 npm install
 
-# --- 7. Create and Enable Systemd Services ---
-echo "[7/8] Creating and enabling systemd services..."
+# --- 6. Create and Enable Systemd Services ---
+echo "[6/7] Creating and enabling systemd services..."
 sudo tee /etc/systemd/system/openvscode-server.service > /dev/null <<EOF
 [Unit]
 Description=OpenVSCode Server
@@ -165,8 +141,8 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now openvscode-server.service
 sudo systemctl enable --now scrcpy-web.service
 
-# --- 8. Final Output ---
-echo "[8/8] Setup Complete!"
+# --- 7. Final Output ---
+echo "[7/7] Setup Complete!"
 IP=$(hostname -I | awk '{print $1}')
 echo "=================================================================="
 echo "          MTVT Development Environment is Ready!"
@@ -178,6 +154,9 @@ echo "  Password: $OVSC_PASS"
 echo
 echo "  scrcpy-web (Android Device in Browser):"
 echo "  URL:      http://$IP:$SCRCPY_WEB_PORT"
+echo
+echo "  Note: scrcpy-web includes its own scrcpy binary, so no separate"
+echo "        native scrcpy installation is needed for browser usage."
 echo
 echo "  A file named '.env' has been created with these details."
 echo "=================================================================="
