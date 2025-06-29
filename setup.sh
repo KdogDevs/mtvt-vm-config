@@ -1,11 +1,11 @@
 #!/bin/bash
 #
-# MTVT VM Config - Simple Working Setup Script
+# MTVT VM Config - Fixed Setup Script
 # Author: KdogDevs
 # Date: 2025-06-29
 #
 
-# Turn off strict error checking temporarily
+# Turn off strict error checking
 set +e
 
 # Configuration
@@ -60,16 +60,24 @@ sudo mv openvscode-server-v1.101.2-linux-x64 openvscode-server
 sudo chown -R $CUSER:$CUSER openvscode-server
 check_step "OpenVSCode Server installation"
 
-# 5. Install Android SDK
+# 5. Install Android SDK (FIXED)
 echo "Step 5: Installing Android SDK..."
-sudo mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
+sudo mkdir -p "$ANDROID_SDK_ROOT"
 cd "$ANDROID_SDK_ROOT"
 sudo wget -O commandlinetools.zip "https://dl.google.com/android/repository/commandlinetools-linux-10406996_latest.zip"
-sudo unzip -o commandlinetools.zip
-sudo mv cmdline-tools latest
-sudo mv latest cmdline-tools/
-sudo rm commandlinetools.zip
+sudo unzip -o commandlinetools.zip -d temp
+sudo mkdir -p cmdline-tools
+sudo mv temp/cmdline-tools cmdline-tools/latest
+sudo rm -rf temp commandlinetools.zip
 sudo chmod +x "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+
+# Verify the path exists
+if [ ! -f "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+    echo "ERROR: sdkmanager not found at expected location"
+    ls -la "$ANDROID_SDK_ROOT/cmdline-tools/" || echo "cmdline-tools directory doesn't exist"
+else
+    echo "✓ sdkmanager found at correct location"
+fi
 
 # Set up environment
 echo "export ANDROID_HOME=$ANDROID_SDK_ROOT" | sudo tee /etc/profile.d/android_sdk.sh
@@ -84,14 +92,19 @@ echo "Step 5b: Installing Android components..."
 sudo env JAVA_HOME="$JAVA_HOME_PATH" PATH="$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 check_step "Android SDK installation"
 
-# 6. Install scrcpy-web only (skip native scrcpy)
+# 6. Install scrcpy-web (FIXED - no auth needed for public repo)
 echo "Step 6: Installing scrcpy-web..."
 cd /opt
-sudo git clone https://github.com/NetrisTV/scrcpy-web.git
-sudo chown -R $CUSER:$CUSER scrcpy-web
-cd scrcpy-web
-npm install
-check_step "scrcpy-web installation"
+# Use git clone without any auth - this is a public repo
+sudo git clone --depth 1 https://github.com/NetrisTV/scrcpy-web.git
+if [ -d "scrcpy-web" ]; then
+    sudo chown -R $CUSER:$CUSER scrcpy-web
+    cd scrcpy-web
+    npm install
+    check_step "scrcpy-web installation"
+else
+    echo "✗ scrcpy-web clone failed"
+fi
 
 # 7. Create services
 echo "Step 7: Creating services..."
@@ -137,7 +150,7 @@ sudo systemctl start openvscode-server.service
 sudo systemctl start scrcpy-web.service
 check_step "Service creation"
 
-# 8. Final output
+# 8. Final output (FIXED - write to user's home directory)
 echo "=== Setup Complete! ==="
 IP=$(hostname -I | awk '{print $1}')
 echo ""
@@ -145,14 +158,22 @@ echo "OpenVSCode Server: http://$IP:$OVSC_PORT"
 echo "Password: $OVSC_PASS"
 echo ""
 echo "scrcpy-web: http://$IP:$SCRCPY_WEB_PORT"
+echo "(No login required - just connect your Android device via USB)"
 echo ""
 
-# Create .env file
-cat > .env <<EOF
+# Create .env file in user's home directory
+cat > /home/$CUSER/.env <<EOF
 OPENVSCODE_SERVER_URL=http://$IP:$OVSC_PORT
 OPENVSCODE_SERVER_PASSWORD=$OVSC_PASS
 SCRCPY_WEB_URL=http://$IP:$SCRCPY_WEB_PORT
 EOF
 
-echo "Credentials saved to .env file"
+echo "Credentials saved to /home/$CUSER/.env file"
+echo ""
+echo "To use scrcpy-web:"
+echo "1. Connect your Android device via USB"
+echo "2. Enable USB debugging on your device"
+echo "3. Open http://$IP:$SCRCPY_WEB_PORT in your browser"
+echo "4. No login required!"
+echo ""
 echo "=== All Done! ==="
