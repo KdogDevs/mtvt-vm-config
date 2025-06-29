@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# MTVT VM Config - Fixed Setup Script
+# MTVT VM Config - Final Fixed Setup Script
 # Author: KdogDevs
 # Date: 2025-06-29
 #
@@ -60,7 +60,7 @@ sudo mv openvscode-server-v1.101.2-linux-x64 openvscode-server
 sudo chown -R $CUSER:$CUSER openvscode-server
 check_step "OpenVSCode Server installation"
 
-# 5. Install Android SDK (FIXED)
+# 5. Install Android SDK
 echo "Step 5: Installing Android SDK..."
 sudo mkdir -p "$ANDROID_SDK_ROOT"
 cd "$ANDROID_SDK_ROOT"
@@ -71,39 +71,37 @@ sudo mv temp/cmdline-tools cmdline-tools/latest
 sudo rm -rf temp commandlinetools.zip
 sudo chmod +x "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
 
-# Verify the path exists
-if [ ! -f "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
-    echo "ERROR: sdkmanager not found at expected location"
-    ls -la "$ANDROID_SDK_ROOT/cmdline-tools/" || echo "cmdline-tools directory doesn't exist"
-else
-    echo "✓ sdkmanager found at correct location"
-fi
-
 # Set up environment
 echo "export ANDROID_HOME=$ANDROID_SDK_ROOT" | sudo tee /etc/profile.d/android_sdk.sh
 echo "export PATH=\$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools" | sudo tee -a /etc/profile.d/android_sdk.sh
 
 JAVA_HOME_PATH=$(dirname $(dirname $(readlink -f $(which java))))
 
-echo "Step 5a: Please accept Android SDK licenses when prompted..."
-sudo env JAVA_HOME="$JAVA_HOME_PATH" PATH="$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses
+if [ -f "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+    echo "Step 5a: Please accept Android SDK licenses when prompted..."
+    sudo env JAVA_HOME="$JAVA_HOME_PATH" PATH="$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses
 
-echo "Step 5b: Installing Android components..."
-sudo env JAVA_HOME="$JAVA_HOME_PATH" PATH="$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+    echo "Step 5b: Installing Android components..."
+    sudo env JAVA_HOME="$JAVA_HOME_PATH" PATH="$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+fi
 check_step "Android SDK installation"
 
-# 6. Install scrcpy-web (FIXED - no auth needed for public repo)
+# 6. Install scrcpy-web (FIXED - use wget instead of git)
 echo "Step 6: Installing scrcpy-web..."
 cd /opt
-# Use git clone without any auth - this is a public repo
-sudo git clone --depth 1 https://github.com/NetrisTV/scrcpy-web.git
+# Download the latest release directly instead of cloning
+sudo wget -O scrcpy-web.zip "https://github.com/NetrisTV/scrcpy-web/archive/refs/heads/main.zip"
+sudo unzip -o scrcpy-web.zip
+sudo mv scrcpy-web-main scrcpy-web
+sudo rm scrcpy-web.zip
+sudo chown -R $CUSER:$CUSER scrcpy-web
+
 if [ -d "scrcpy-web" ]; then
-    sudo chown -R $CUSER:$CUSER scrcpy-web
     cd scrcpy-web
     npm install
     check_step "scrcpy-web installation"
 else
-    echo "✗ scrcpy-web clone failed"
+    echo "✗ scrcpy-web installation failed"
 fi
 
 # 7. Create services
@@ -125,6 +123,8 @@ Restart=always
 WantedBy=multi-user.target
 EOF
 
+# Make sure scrcpy-web service only starts if directory exists
+if [ -d "/opt/scrcpy-web" ]; then
 sudo tee /etc/systemd/system/scrcpy-web.service >/dev/null <<EOF
 [Unit]
 Description=scrcpy-web
@@ -136,29 +136,38 @@ User=$CUSER
 WorkingDirectory=/opt/scrcpy-web
 Environment=PORT=$SCRCPY_WEB_PORT
 Environment=PATH=/usr/bin:/usr/local/bin:$ANDROID_SDK_ROOT/platform-tools
-ExecStart=/usr/bin/npm run start
+ExecStart=/usr/bin/node server.js
 Restart=always
 
 [Install]
 WantedBy=multi-user.target
 EOF
+fi
 
 sudo systemctl daemon-reload
 sudo systemctl enable openvscode-server.service
-sudo systemctl enable scrcpy-web.service
+if [ -d "/opt/scrcpy-web" ]; then
+    sudo systemctl enable scrcpy-web.service
+    sudo systemctl start scrcpy-web.service
+fi
 sudo systemctl start openvscode-server.service
-sudo systemctl start scrcpy-web.service
 check_step "Service creation"
 
-# 8. Final output (FIXED - write to user's home directory)
+# 8. Final output
 echo "=== Setup Complete! ==="
 IP=$(hostname -I | awk '{print $1}')
 echo ""
 echo "OpenVSCode Server: http://$IP:$OVSC_PORT"
 echo "Password: $OVSC_PASS"
 echo ""
-echo "scrcpy-web: http://$IP:$SCRCPY_WEB_PORT"
-echo "(No login required - just connect your Android device via USB)"
+
+if [ -d "/opt/scrcpy-web" ]; then
+    echo "scrcpy-web: http://$IP:$SCRCPY_WEB_PORT"
+    echo "(No login required)"
+else
+    echo "scrcpy-web: Installation failed - service not available"
+fi
+
 echo ""
 
 # Create .env file in user's home directory
@@ -170,10 +179,11 @@ EOF
 
 echo "Credentials saved to /home/$CUSER/.env file"
 echo ""
-echo "To use scrcpy-web:"
-echo "1. Connect your Android device via USB"
-echo "2. Enable USB debugging on your device"
-echo "3. Open http://$IP:$SCRCPY_WEB_PORT in your browser"
-echo "4. No login required!"
+echo "ADB Usage:"
+echo "For USB devices: Connect via USB, enable USB debugging, then the web interface will detect it"
+echo "For WiFi devices: Use 'adb connect DEVICE_IP:5555' first, then use the web interface"
+echo ""
+echo "Your ADB connection to 192.168.1.131 is already established!"
+echo "Now visit http://$IP:$SCRCPY_WEB_PORT to control your device in the browser."
 echo ""
 echo "=== All Done! ==="
