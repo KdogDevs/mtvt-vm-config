@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# MTVT VM Config - One-Command Setup Script (v6 - Manual license acceptance)
+# MTVT VM Config - One-Command Setup Script (v7 - Better error handling)
 # Installs: OpenVSCode Server, Android SDK, scrcpy, and scrcpy-web
 # Author: KdogDevs & Copilot
 # Date: 2025-06-29
@@ -28,7 +28,7 @@ sudo rm -rf /opt/openvscode-server /opt/scrcpy /opt/scrcpy-web "$ANDROID_SDK_ROO
 # --- 2. Install System Dependencies ---
 echo "[2/8] Installing system dependencies..."
 sudo apt-get update
-sudo apt-get install -y wget curl unzip tar git openjdk-17-jdk ffmpeg usbutils build-essential pkg-config meson ninja-build libavcodec-dev libavdevice-dev libavformat-dev libavutil-dev libusb-1.0-0-dev libssl-dev libwebsockets-dev python3
+sudo apt-get install -y wget curl unzip tar git openjdk-17-jdk ffmpeg usbutils build-essential pkg-config meson ninja-build libavcodec-dev libavdevice-dev libavformat-dev libavutil-dev libusb-1.0-0-dev libssl-dev libwebsockets-dev python3 cmake libsdl2-dev
 
 # Install Node.js
 if ! command -v node > /dev/null; then
@@ -93,11 +93,27 @@ sudo env JAVA_HOME="$JAVA_HOME_PATH" \
 # --- 5. Install scrcpy ---
 echo "[5/8] Installing scrcpy (native backend)..."
 cd /opt
+
+# Download pre-built scrcpy server
+echo "Downloading scrcpy server..."
+SCRCPY_VERSION="v2.4"
+sudo wget -q --show-progress -O scrcpy-server.jar "https://github.com/Genymobile/scrcpy/releases/download/${SCRCPY_VERSION}/scrcpy-server-${SCRCPY_VERSION}"
+sudo mkdir -p /usr/local/share/scrcpy
+sudo mv scrcpy-server.jar /usr/local/share/scrcpy/scrcpy-server
+
+# Build scrcpy from source
+echo "Building scrcpy from source..."
 sudo git clone -q https://github.com/Genymobile/scrcpy.git
 cd scrcpy
-sudo meson setup x --buildtype release --strip -Db_lto=true > /dev/null
-sudo ninja -Cx > /dev/null
-sudo ninja -Cx install > /dev/null
+git checkout ${SCRCPY_VERSION}
+
+# Show build output for debugging
+echo "Running meson setup..."
+sudo meson setup x --buildtype release --strip -Db_lto=true -Dprebuilt_server=/usr/local/share/scrcpy/scrcpy-server
+echo "Building with ninja..."
+sudo ninja -Cx
+echo "Installing scrcpy..."
+sudo ninja -Cx install
 
 # --- 6. Install scrcpy-web ---
 echo "[6/8] Installing scrcpy-web..."
@@ -105,7 +121,8 @@ cd /opt
 sudo git clone -q https://github.com/NetrisTV/scrcpy-web.git
 sudo chown -R $CUSER:$CUSER scrcpy-web
 cd scrcpy-web
-npm install --silent > /dev/null 2>&1
+echo "Installing npm dependencies (this may take a few minutes)..."
+npm install
 
 # --- 7. Create and Enable Systemd Services ---
 echo "[7/8] Creating and enabling systemd services..."
