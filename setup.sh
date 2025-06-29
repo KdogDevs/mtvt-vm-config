@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# MTVT VM Config - One-Command Setup Script (v4 - Direct environment approach)
+# MTVT VM Config - One-Command Setup Script (v6 - Manual license acceptance)
 # Installs: OpenVSCode Server, Android SDK, scrcpy, and scrcpy-web
 # Author: KdogDevs & Copilot
 # Date: 2025-06-29
@@ -46,7 +46,7 @@ sudo rm openvscode-server.tar.gz
 sudo mv openvscode-server-v1.101.2-linux-x64 openvscode-server
 sudo chown -R $CUSER:$CUSER openvscode-server
 
-# --- 4. Install Android SDK (Robust Method) ---
+# --- 4. Install Android SDK ---
 echo "[4/8] Installing Android SDK..."
 sudo mkdir -p "$ANDROID_SDK_ROOT"
 cd "$ANDROID_SDK_ROOT"
@@ -64,26 +64,25 @@ echo "JAVA_HOME detected at: $JAVA_HOME_PATH"
 # Set execute permissions
 sudo chmod +x "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
 
-# Create the system-wide environment file (fixed version)
+# Create the system-wide environment file
 sudo tee /etc/profile.d/android_sdk.sh > /dev/null <<EOF
 export ANDROID_HOME=$ANDROID_SDK_ROOT
 export PATH="\${PATH}:${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin:${ANDROID_SDK_ROOT}/platform-tools"
 EOF
 
-# Now run sdkmanager with explicit environment
+# Temporarily disable exit on error for license acceptance
+set +e
 echo "Accepting Android SDK licenses..."
-# Use a here-doc to avoid issues with 'yes' and pipes
+echo "Please respond to the license prompts that follow:"
 sudo env JAVA_HOME="$JAVA_HOME_PATH" \
      PATH="$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" \
-     "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses <<< "y
-y
-y
-y
-y
-y
-y
-y
-y"
+     "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses
+LICENSE_RESULT=$?
+set -e
+
+if [ $LICENSE_RESULT -ne 0 ]; then
+    echo "Warning: Not all licenses were accepted. Some SDK components may not install."
+fi
 
 echo "Installing Android platform-tools, platforms, and build-tools..."
 sudo env JAVA_HOME="$JAVA_HOME_PATH" \
