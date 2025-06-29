@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# MTVT VM Config - Final Working Setup Script
+# MTVT VM Config - Working Setup Script with ws-scrcpy
 # Author: KdogDevs
 # Date: 2025-06-29
 #
@@ -30,7 +30,7 @@ check_step() {
 echo "Step 1: Cleaning up..."
 sudo systemctl stop openvscode-server.service 2>/dev/null
 sudo systemctl stop scrcpy-web.service 2>/dev/null
-sudo rm -rf /opt/openvscode-server /opt/scrcpy-web "$ANDROID_SDK_ROOT"
+sudo rm -rf /opt/openvscode-server /opt/scrcpy-web /opt/ws-scrcpy "$ANDROID_SDK_ROOT"
 sudo rm -f /etc/systemd/system/openvscode-server.service
 sudo rm -f /etc/systemd/system/scrcpy-web.service
 sudo systemctl daemon-reload 2>/dev/null
@@ -86,120 +86,24 @@ if [ -f "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
 fi
 check_step "Android SDK installation"
 
-# 6. Install scrcpy-web (WORKING VERSION)
-echo "Step 6: Installing scrcpy-web..."
+# 6. Install ws-scrcpy (CORRECT VERSION)
+echo "Step 6: Installing ws-scrcpy..."
 cd /opt
-
-# First, try to clear any git credential issues
-sudo -u $CUSER git config --global --unset credential.helper 2>/dev/null || true
-
-# Try the working scrcpy-web repository
-echo "Attempting to clone scrcpy-web from lukashoror repository..."
-sudo -u $CUSER git clone https://github.com/lukashoror/scrcpy-web.git 2>/dev/null
-
-if [ ! -d "scrcpy-web" ]; then
-    echo "Lukashoror repo failed, trying direct zip download..."
-    sudo wget -O scrcpy-web.zip "https://github.com/lukashoror/scrcpy-web/archive/refs/heads/main.zip" 2>/dev/null
-    if [ -f "scrcpy-web.zip" ]; then
-        sudo unzip -o scrcpy-web.zip
-        sudo mv scrcpy-web-main scrcpy-web 2>/dev/null || sudo mv lukashoror-scrcpy-web-* scrcpy-web 2>/dev/null
-        sudo rm scrcpy-web.zip
-    fi
-fi
-
-# If still no luck, create a simple alternative
-if [ ! -d "scrcpy-web" ]; then
-    echo "Creating simple web interface alternative..."
-    sudo mkdir -p scrcpy-web
-    
-    # Create a simple HTML interface
-    sudo tee scrcpy-web/index.html >/dev/null <<'EOF'
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Android Device Control</title>
-    <style>
-        body { font-family: Arial, sans-serif; padding: 20px; text-align: center; }
-        .container { max-width: 800px; margin: 0 auto; }
-        .status { padding: 10px; margin: 10px; border-radius: 5px; }
-        .success { background-color: #d4edda; border: 1px solid #c3e6cb; }
-        .info { background-color: #d1ecf1; border: 1px solid #bee5eb; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Android Device Control</h1>
-        <div class="status info">
-            <h3>Setup Instructions:</h3>
-            <p>1. Connect your Android device via USB</p>
-            <p>2. Enable USB debugging on your device</p>
-            <p>3. Run: <code>adb devices</code> to verify connection</p>
-            <p>4. Use ADB commands or install a proper scrcpy web interface</p>
-        </div>
-        <div class="status success">
-            <h3>Alternative Solutions:</h3>
-            <p>• Install native scrcpy: <code>sudo apt install scrcpy</code></p>
-            <p>• Use ADB directly: <code>adb shell</code></p>
-            <p>• Try vysor.io or similar web-based tools</p>
-        </div>
-    </div>
-</body>
-</html>
-EOF
-
-    # Create a simple server
-    sudo tee scrcpy-web/server.js >/dev/null <<'EOF'
-const http = require('http');
-const fs = require('fs');
-const path = require('path');
-
-const port = process.env.PORT || 5000;
-
-http.createServer((req, res) => {
-    if (req.url === '/' || req.url === '/index.html') {
-        fs.readFile(path.join(__dirname, 'index.html'), (err, data) => {
-            if (err) {
-                res.writeHead(404);
-                res.end('Not found');
-                return;
-            }
-            res.writeHead(200, {'Content-Type': 'text/html'});
-            res.end(data);
-        });
-    } else {
-        res.writeHead(404);
-        res.end('Not found');
-    }
-}).listen(port, () => {
-    console.log(`Server running on port ${port}`);
-});
-EOF
-
-    # Create package.json
-    sudo tee scrcpy-web/package.json >/dev/null <<'EOF'
-{
-  "name": "simple-android-interface",
-  "version": "1.0.0",
-  "description": "Simple Android device interface",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
-  }
-}
-EOF
-fi
-
-# Set ownership
+echo "Downloading ws-scrcpy v0.8.1..."
+sudo wget -O ws-scrcpy.tar.gz "https://github.com/NetrisTV/ws-scrcpy/archive/refs/tags/v0.8.1.tar.gz"
+sudo tar -xzf ws-scrcpy.tar.gz
+sudo mv ws-scrcpy-0.8.1 scrcpy-web
+sudo rm ws-scrcpy.tar.gz
 sudo chown -R $CUSER:$CUSER scrcpy-web
 
-# Install dependencies if package.json exists
-if [ -f "scrcpy-web/package.json" ]; then
+if [ -d "scrcpy-web" ]; then
+    echo "Installing ws-scrcpy dependencies..."
     cd scrcpy-web
-    npm install 2>/dev/null || echo "npm install skipped"
-    cd ..
+    npm install
+    check_step "ws-scrcpy installation"
+else
+    echo "✗ ws-scrcpy installation failed"
 fi
-
-check_step "scrcpy-web installation"
 
 # 7. Create services
 echo "Step 7: Creating services..."
@@ -220,10 +124,11 @@ Restart=always
 WantedBy=multi-user.target
 EOF
 
-# Create scrcpy-web service
+# Create ws-scrcpy service
+if [ -d "/opt/scrcpy-web" ]; then
 sudo tee /etc/systemd/system/scrcpy-web.service >/dev/null <<EOF
 [Unit]
-Description=Android Web Interface
+Description=ws-scrcpy Web Interface
 After=network.target
 
 [Service]
@@ -232,18 +137,21 @@ User=$CUSER
 WorkingDirectory=/opt/scrcpy-web
 Environment=PORT=$SCRCPY_WEB_PORT
 Environment=PATH=/usr/bin:/usr/local/bin:$ANDROID_SDK_ROOT/platform-tools
-ExecStart=/usr/bin/node server.js
+ExecStart=/usr/bin/npm start
 Restart=always
 
 [Install]
 WantedBy=multi-user.target
 EOF
+fi
 
 sudo systemctl daemon-reload
 sudo systemctl enable openvscode-server.service
-sudo systemctl enable scrcpy-web.service
+if [ -d "/opt/scrcpy-web" ]; then
+    sudo systemctl enable scrcpy-web.service
+    sudo systemctl start scrcpy-web.service
+fi
 sudo systemctl start openvscode-server.service
-sudo systemctl start scrcpy-web.service
 check_step "Service creation"
 
 # 8. Final output
@@ -253,7 +161,14 @@ echo ""
 echo "OpenVSCode Server: http://$IP:$OVSC_PORT"
 echo "Password: $OVSC_PASS"
 echo ""
-echo "Android Web Interface: http://$IP:$SCRCPY_WEB_PORT"
+
+if [ -d "/opt/scrcpy-web" ]; then
+    echo "ws-scrcpy Web Interface: http://$IP:$SCRCPY_WEB_PORT"
+    echo "(No login required - just connect your Android device)"
+else
+    echo "ws-scrcpy: Installation failed - service not available"
+fi
+
 echo ""
 
 # Create .env file
@@ -265,10 +180,10 @@ EOF
 
 echo "Credentials saved to /home/$CUSER/.env file"
 echo ""
-echo "ADB Usage:"
-echo "• Your device (192.168.1.131) is already connected"
-echo "• Use 'adb devices' to list connected devices"
-echo "• Use 'adb shell' for command line access"
-echo "• Visit the web interface above for GUI options"
+echo "ws-scrcpy Usage:"
+echo "1. Your ADB connection to 192.168.1.131 is already established"
+echo "2. Visit http://$IP:$SCRCPY_WEB_PORT in your browser"
+echo "3. Your Android device should appear automatically"
+echo "4. Click on the device to start screen mirroring"
 echo ""
 echo "=== All Done! ==="
