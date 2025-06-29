@@ -1,9 +1,9 @@
 #!/bin/bash
 #
-# MTVT VM Config - One-Command Setup Script (v3 - Robust sudo/Java environment)
+# MTVT VM Config - One-Command Setup Script (v4 - Direct environment approach)
 # Installs: OpenVSCode Server, Android SDK, scrcpy, and scrcpy-web
 # Author: KdogDevs & Copilot
-# Date: 2025-06-28
+# Date: 2025-06-29
 #
 set -euo pipefail
 
@@ -18,8 +18,8 @@ echo "--- Starting MTVT VM Setup for user: $CUSER ---"
 
 # --- 1. Cleanup: Ensure a clean slate ---
 echo "[1/8] Cleaning up previous installations..."
-sudo systemctl stop openvscode-server.service || true
-sudo systemctl stop scrcpy-web.service || true
+sudo systemctl stop openvscode-server.service 2>/dev/null || true
+sudo systemctl stop scrcpy-web.service 2>/dev/null || true
 sudo rm -f /etc/systemd/system/openvscode-server.service
 sudo rm -f /etc/systemd/system/scrcpy-web.service
 sudo systemctl daemon-reload
@@ -51,41 +51,50 @@ echo "[4/8] Installing Android SDK..."
 sudo mkdir -p "$ANDROID_SDK_ROOT"
 cd "$ANDROID_SDK_ROOT"
 sudo wget -q --show-progress -O commandlinetools.zip "https://dl.google.com/android/repository/commandlinetools-linux-10406996_latest.zip"
-sudo unzip -o commandlinetools.zip -d "$ANDROID_SDK_ROOT/cmdline-tools-temp"
+sudo unzip -q -o commandlinetools.zip -d "$ANDROID_SDK_ROOT/cmdline-tools-temp"
 sudo rm commandlinetools.zip
 sudo mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
 sudo mv "$ANDROID_SDK_ROOT/cmdline-tools-temp/cmdline-tools" "$ANDROID_SDK_ROOT/cmdline-tools/latest"
 sudo rm -rf "$ANDROID_SDK_ROOT/cmdline-tools-temp"
 
-# Set system-wide environment
-echo "export ANDROID_HOME=$ANDROID_SDK_ROOT" | sudo tee /etc/profile.d/android_sdk.sh
-echo 'export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools' | sudo tee -a /etc/profile.d/android_sdk.sh
-source /etc/profile.d/android_sdk.sh
-
-# **THE FIX:** Explicitly find JAVA_HOME and pass it to sudo
-# Find the location of the installed JDK.
+# Find Java
 JAVA_HOME_PATH=$(dirname $(dirname $(readlink -f $(which java))))
 echo "JAVA_HOME detected at: $JAVA_HOME_PATH"
 
-# Ensure sdkmanager is executable
+# Set execute permissions
 sudo chmod +x "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-if [ ! -f "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
-    echo "FATAL: sdkmanager not found. Android SDK installation failed."
-    exit 1
-fi
 
-# Build the full command with the correct environment for sudo
-SDKMANAGER_CMD="env JAVA_HOME=$JAVA_HOME_PATH PATH=$PATH $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+# Create the system-wide environment file (fixed version)
+sudo tee /etc/profile.d/android_sdk.sh > /dev/null <<EOF
+export ANDROID_HOME=$ANDROID_SDK_ROOT
+export PATH="\${PATH}:${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin:${ANDROID_SDK_ROOT}/platform-tools"
+EOF
 
+# Now run sdkmanager with explicit environment
 echo "Accepting Android SDK licenses..."
-yes | sudo $SDKMANAGER_CMD --licenses
+# Use a here-doc to avoid issues with 'yes' and pipes
+sudo env JAVA_HOME="$JAVA_HOME_PATH" \
+     PATH="$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" \
+     "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses <<< "y
+y
+y
+y
+y
+y
+y
+y
+y"
+
 echo "Installing Android platform-tools, platforms, and build-tools..."
-sudo $SDKMANAGER_CMD "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+sudo env JAVA_HOME="$JAVA_HOME_PATH" \
+     PATH="$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" \
+     "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+     "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
 # --- 5. Install scrcpy ---
 echo "[5/8] Installing scrcpy (native backend)..."
 cd /opt
-sudo git clone https://github.com/Genymobile/scrcpy.git
+sudo git clone -q https://github.com/Genymobile/scrcpy.git
 cd scrcpy
 sudo meson setup x --buildtype release --strip -Db_lto=true > /dev/null
 sudo ninja -Cx > /dev/null
@@ -94,10 +103,10 @@ sudo ninja -Cx install > /dev/null
 # --- 6. Install scrcpy-web ---
 echo "[6/8] Installing scrcpy-web..."
 cd /opt
-sudo git clone https://github.com/NetrisTV/scrcpy-web.git
+sudo git clone -q https://github.com/NetrisTV/scrcpy-web.git
 sudo chown -R $CUSER:$CUSER scrcpy-web
 cd scrcpy-web
-npm install > /dev/null
+npm install --silent > /dev/null 2>&1
 
 # --- 7. Create and Enable Systemd Services ---
 echo "[7/8] Creating and enabling systemd services..."
